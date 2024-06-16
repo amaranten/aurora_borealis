@@ -4,6 +4,8 @@ import { Point, LineString } from 'ol/geom.js';
 import { Circle as CircleStyle, Fill, Stroke, Style, Text as TextStyle } from 'ol/style';
 import { Tile as TileLayer, Vector as VectorLayer } from 'ol/layer.js';
 import { useGeographic } from 'ol/proj.js';
+import jspreadsheet from 'jspreadsheet-ce';
+import 'jspreadsheet-ce/dist/jspreadsheet.css';
 
 const createShortestPathEdge = (start, end) => {
     let [startLon, startLat] = start;
@@ -74,10 +76,13 @@ export class Application {
         this.animation_frame_requested = false;
         this.scheduled = {};
         this.old_data = {};
-        this.data = { 
+        this.data = {
             started: true,
             points_data: [],
             edges_data: [],  // Ensure edges_data is included
+            ship_schedules: [],
+            selected_ship: null,
+            departures: [['ДЮК II', 'Новый порт', 'Рейд Мурманска', '2022-03-01 00:00:00']],
         };
         this.initWebSocket();
     }
@@ -87,8 +92,7 @@ export class Application {
         this.socket = new WebSocket(webSocketUrl);
 
         this.socket.addEventListener('open', () => {
-            console.log('WebSocket connection established');
-            this.socket.send('Hello Server!');
+            
         });
 
         this.socket.addEventListener('message', event => {
@@ -100,19 +104,19 @@ export class Application {
         });
 
         this.socket.addEventListener('close', () => {
-            console.log('WebSocket connection closed');
+            
         });
 
         this.socket.addEventListener('error', error => {
-            console.error('WebSocket error:', error);
+
         });
     }
 
-    sendMessage(message) {
+    sendMessage(data) {
         if (this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(message);
+            this.socket.send(JSON.stringify(data));
         } else {
-            console.log('WebSocket is not open. Unable to send message');
+            
         }
     }
 
@@ -132,13 +136,75 @@ export class Application {
     }
 
     update = () => {
-        if (!this.did_change()) return;
+        if (this.did_change(['started'])) {
+            let container = document.getElementById('spreadsheet');
+            container.innerHTML = '';
+
+            let self = this;
+
+            this.departures_spreadsheet = jspreadsheet(container, {
+                data: this.data.departures,
+                columns: [
+                    { type: 'text', title: 'Название корабля', width: 240 },
+                    { type: 'number', title: 'Точка отправки', width: 160 },
+                    { type: 'number', title: 'Точка прибытия', width: 160 },
+                    {
+                        type: 'calendar',
+                        title: 'Время отправки',
+                        width: 160,
+                        options: {
+                            format: 'YYYY-MM-DD HH:mm',
+                            time: true,
+                        }
+                    },
+                ],
+                onselection: (instance, x1, y1, x2, y2, origin) => {
+                    self.data.selected_ship = self.data.departures[y1] ? self.data.departures[y1][0] : null;
+                    self.update();
+                },
+                onchange: (instance, cell, x, y, value) => {
+                    self.data.departures = instance.jexcel.getData();
+                    self.sendMessage({
+                        msgtype: 'calculate-schedule',
+                        start_point_id: self.data.departures[y][1],
+                        end_point_id: self.data.departures[y][2],
+                        ship: self.data.departures[y][0],
+                        departure_time: self.data.departures[y][3],
+                    })
+                    self.update();
+                }
+            });
+        }
+
+        if (this.did_change(['ship_schedules', 'selected_ship'])) {
+            let schedule_container = document.getElementById('schedule-spreadsheet');
+            schedule_container.innerHTML = '';
+            jspreadsheet(schedule_container, {
+                data: [
+                    [this.data.selected_ship]
+                ],
+                columns: [
+                    { type: 'text', title: 'Car', width: 120 },
+                    { type: 'number', title: '2022', width: 80 },
+                    { type: 'number', title: '2023', width: 80 },
+                    { type: 'number', title: '2024', width: 80 },
+                    {
+                        type: 'calendar',
+                        title: 'Datetime',
+                        width: 150,
+                        options: {
+                            format: 'YYYY-MM-DD HH:mm',
+                            time: true,
+                        }
+                    },
+                ]
+            });
+        }
 
         if (this.did_change(['started', 'points_data', 'edges_data'])) {
             const place = [68.3, 76.2];  // Use the original place coordinates
             useGeographic();
             document.getElementById('map').innerHTML = '';
-            console.log(this.data);
 
             this.map = new Map({
                 target: 'map',
@@ -156,7 +222,7 @@ export class Application {
                             features: this.data.edges_data.map(edge => {
                                 // Use the function to create the shortest path edge
                                 const lineString = createShortestPathEdge(
-                                    [edge.start_lon, edge.start_lat], 
+                                    [edge.start_lon, edge.start_lat],
                                     [edge.end_lon, edge.end_lat]
                                 );
                                 return new Feature(lineString);
@@ -200,6 +266,8 @@ export class Application {
                 ],
             });
         }
+
+        this.old_data = deep_copy(this.data);
     }
 
     render = () => {
