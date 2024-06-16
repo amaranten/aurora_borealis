@@ -1,0 +1,35 @@
+body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+.logo-caption {
+    padding: 10px;
+    font-size: 28px;
+    font-family: "Space Grotesk", sans-serif;
+}
+
+#main-logo {
+    padding: 5px;
+}
+
+.container {
+    width: 100%;
+    min-height: 360px;
+    border: 1px solid #335b6e;
+    display: flex;
+    align-content: space-around;
+}
+
+#header-layout {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+#map {
+    width: 100%;
+    min-height: 600px;
+}
